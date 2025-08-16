@@ -23,7 +23,7 @@ public class Respuesta {
 
     private LocalDateTime fechaCreacion;
 
-    private String solucion;
+    private Boolean solucion;
 
     @ManyToOne
     @JoinColumn(name = "topico_id")
