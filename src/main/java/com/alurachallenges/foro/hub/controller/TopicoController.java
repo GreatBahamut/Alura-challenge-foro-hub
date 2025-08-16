@@ -1,21 +1,22 @@
 package com.alurachallenges.foro.hub.controller;
 
-import com.alurachallenges.foro.hub.domain.curso.Curso;
 import com.alurachallenges.foro.hub.domain.curso.CursoRepository;
-import com.alurachallenges.foro.hub.domain.perfil.Perfil;
-import com.alurachallenges.foro.hub.domain.perfil.PerfilRepository;
 import com.alurachallenges.foro.hub.domain.topico.*;
+import com.alurachallenges.foro.hub.domain.ValidarDuplicadoException;
+import com.alurachallenges.foro.hub.domain.usuario.UsuarioDTO;
+import com.alurachallenges.foro.hub.domain.usuario.UsuarioRepository;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/topicos")
@@ -28,8 +29,7 @@ public class TopicoController {
     private CursoRepository cursoRepository;
 
     @Autowired
-    private PerfilRepository perfilRepository;
-
+    private UsuarioRepository usuarioRepository;
 
     @Transactional
     @PostMapping
@@ -37,74 +37,85 @@ public class TopicoController {
             @RequestBody @Valid DatosPublicarTopico datos,
             UriComponentsBuilder uriComponentsBuilder) {
 
-        // Crear y guardar el tópico
+        if (topicoRepository.existsByTituloAndMensaje(datos.titulo(), datos.mensaje())) {
+            throw new ValidarDuplicadoException("Ya existe un tópico con el mismo título y mensaje");
+        }
+
         Topico topico = new Topico(datos);
         topicoRepository.save(topico);
 
-        // Traer entidades completas
-        Optional<Perfil> autor = perfilRepository.findById(topico.getAutorId());
-        Optional<Curso> curso = cursoRepository.findById(topico.getCursoId());
+        var usuario = usuarioRepository.findById(topico.getAutorId())
+                .orElseThrow(() -> new EntityNotFoundException("Autor no encontrado"));
+        var autor = new UsuarioDTO(usuario);
 
-        // Construir DTO
-        DetallesTopico detalles = new DetallesTopico(topico, autor.orElse(null), curso.orElse(null));
+        var curso = cursoRepository.findById(topico.getCursoId())
+                .orElseThrow(() -> new EntityNotFoundException("Curso no encontrado"));
 
-        // Construir URI de creación
+        var detalles = new DetallesTopico(topico, autor, curso);
         var uri = uriComponentsBuilder.path("/topicos/{id}").buildAndExpand(topico.getId()).toUri();
 
         return ResponseEntity.created(uri).body(detalles);
     }
 
     @GetMapping
-    public ResponseEntity<Page<ListaTopico>> listar(@PageableDefault(size = 5, sort = {"fechaCreacion"}) Pageable paginacion){
+    public ResponseEntity<Page<ListaTopico>> listar(
+            @PageableDefault(size = 10, sort = {"fechaCreacion"}, direction = Sort.Direction.DESC) Pageable paginacion) {
 
         var page = topicoRepository.findAllByStatusTrue(paginacion)
                 .map(topico -> new ListaTopico(topico, cursoRepository));
-        return ResponseEntity.ok(page);
 
+        return ResponseEntity.ok(page);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<DetallesTopico> detalleTopico(@PathVariable Long id) {
-        Topico topico = topicoRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Tópico no encontrado"));
+        var topico = topicoRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Tópico no encontrado"));
 
-        DetallesTopico detalles = perfilRepository.findById(topico.getAutorId())
-                .map(autor -> cursoRepository.findById(topico.getCursoId())
-                        .map(curso -> new DetallesTopico(topico, autor, curso))
-                        .orElseThrow(() -> new RuntimeException("Curso no encontrado"))
-                )
-                .orElseThrow(() -> new RuntimeException("Autor no encontrado"));
+        var usuario = usuarioRepository.findById(topico.getAutorId())
+                .orElseThrow(() -> new EntityNotFoundException("Autor no encontrado"));
+        var autor = new UsuarioDTO(usuario);
 
+        var curso = cursoRepository.findById(topico.getCursoId())
+                .orElseThrow(() -> new EntityNotFoundException("Curso no encontrado"));
+
+        var detalles = new DetallesTopico(topico, autor, curso);
         return ResponseEntity.ok(detalles);
     }
 
     @Transactional
-    @PutMapping
-    public ResponseEntity actualizar (@RequestBody @Valid DatosActualizacionTopico datos){
-        var topico = topicoRepository.getReferenceById(datos.id());
+    @PutMapping("/{id}")
+    public ResponseEntity<DetallesTopico> actualizar(
+            @PathVariable Long id,
+            @RequestBody @Valid DatosActualizacionTopico datos) {
+
+        var topico = topicoRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Tópico no encontrado"));
+
+        if (topicoRepository.existsByTituloAndMensaje(datos.titulo(), datos.mensaje())
+                && (!topico.getTitulo().equals(datos.titulo()) || !topico.getMensaje().equals(datos.mensaje()))) {
+            throw new ValidarDuplicadoException("Ya existe un tópico con el mismo título y mensaje");
+        }
+
         topico.editarTopico(datos);
 
-        DetallesTopico detalles = perfilRepository.findById(topico.getAutorId())
-                .map(autor -> cursoRepository.findById(topico.getCursoId())
-                        .map(curso -> new DetallesTopico(topico, autor, curso))
-                        .orElseThrow(() -> new RuntimeException("Curso no encontrado"))
-                )
-                .orElseThrow(() -> new RuntimeException("Autor no encontrado"));
+        var usuario = usuarioRepository.findById(topico.getAutorId())
+                .orElseThrow(() -> new EntityNotFoundException("Autor no encontrado"));
+        var autor = new UsuarioDTO(usuario);
 
+        var curso = cursoRepository.findById(topico.getCursoId())
+                .orElseThrow(() -> new EntityNotFoundException("Curso no encontrado"));
+
+        var detalles = new DetallesTopico(topico, autor, curso);
         return ResponseEntity.ok(detalles);
     }
 
     @Transactional
     @DeleteMapping("/{id}")
-    public ResponseEntity ocultar (@PathVariable Long id){
+    public ResponseEntity borrar(@PathVariable Long id) {
 
-        //para eliminar de la base de datos
-        //repository.deleteById(id);
-
-        var topico = topicoRepository.getReferenceById(id);
-        topico.ocultar();
+        topicoRepository.deleteById(id);
 
         return ResponseEntity.noContent().build();
     }
-
 }

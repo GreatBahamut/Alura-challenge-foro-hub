@@ -1,8 +1,9 @@
 package com.alurachallenges.foro.hub.domain.topico;
 
 import com.alurachallenges.foro.hub.domain.curso.Curso;
-import com.alurachallenges.foro.hub.domain.perfil.Perfil;
 import com.alurachallenges.foro.hub.domain.respuesta.DetalleRespuesta;
+
+import com.alurachallenges.foro.hub.domain.usuario.UsuarioDTO;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -13,11 +14,11 @@ public record DetallesTopico(
         String mensaje,
         LocalDateTime fechaCreacion,
         Boolean status,
-        Perfil autor,
+        UsuarioDTO autor,
         Curso curso,
         List<DetalleRespuesta> respuestas
 ) {
-    public DetallesTopico(Topico topico, Perfil autor, Curso curso) {
+    public DetallesTopico(Topico topico, UsuarioDTO autor, Curso curso) {
         this(
                 topico.getId(),
                 topico.getTitulo(),
